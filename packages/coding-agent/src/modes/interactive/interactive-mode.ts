@@ -104,7 +104,7 @@ import {
 } from "../../core/model-resolver.ts";
 import { CredentialSynchronizationError } from "../../core/model-runtime.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
-import { RADIUS_MCP_URL, RADIUS_PROVIDER_ID } from "../../core/radius.ts";
+import { RADIUS_MCP_URL, RADIUS_PROVIDER_ID, RADIUS_WEB_SEARCH_TOOL } from "../../core/radius.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import {
@@ -6373,7 +6373,8 @@ export class InteractiveMode {
 
 	/**
 	 * Offer to point the Radius MCP server in the global mcp.json at the Radius login, adding the server
-	 * when missing. Nothing is asked when a global server already uses this login.
+	 * when missing, and to expose Radius web search as a direct tool. Nothing is asked when a global
+	 * server already uses this login and sets an exposure for web search.
 	 */
 	private offerRadiusMcpServer(providerId: string, providerName: string): void {
 		const mcpPath = path.join(getAgentDir(), "mcp.json");
@@ -6386,14 +6387,27 @@ export class InteractiveMode {
 		const existing = servers.find(
 			(server) => "url" in server.config && normalizeUrl(server.config.url) === normalizeUrl(RADIUS_MCP_URL),
 		);
-		if (existing && "url" in existing.config && existing.config.auth?.provider === providerId) return;
+		if (
+			existing &&
+			"url" in existing.config &&
+			existing.config.auth?.provider === providerId &&
+			existing.config.toolExposure?.[RADIUS_WEB_SEARCH_TOOL] !== undefined
+		) {
+			return;
+		}
 
 		let name = existing?.name ?? "radius";
 		if (!existing && servers.some((server) => server.name === name)) name = "radius-mcp";
+		// An exposure the user already chose for web search wins over the default.
+		const toolExposure = { [RADIUS_WEB_SEARCH_TOOL]: "direct" as const };
 		const config: McpHttpServerConfig =
 			existing && "url" in existing.config
-				? { ...existing.config, auth: { provider: providerId } }
-				: { url: RADIUS_MCP_URL, auth: { provider: providerId } };
+				? {
+						...existing.config,
+						auth: { provider: providerId },
+						toolExposure: { ...toolExposure, ...existing.config.toolExposure },
+					}
+				: { url: RADIUS_MCP_URL, auth: { provider: providerId }, toolExposure };
 		// `auth` replaces the MCP OAuth sign-in.
 		delete config.oauth;
 
