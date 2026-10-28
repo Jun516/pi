@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import process from "node:process";
+import { StringDecoder } from "node:string_decoder";
 import crossSpawn from "cross-spawn";
 import { type JsonRpcMessage, McpConnectionClosedError, parseJsonRpcMessage } from "../protocol/jsonrpc.ts";
 import { DEFAULT_MAX_MESSAGE_BYTES, type McpTransport, TransportEvents } from "./transport.ts";
@@ -71,6 +72,7 @@ export class StdioTransport extends TransportEvents implements McpTransport {
 	private child: ChildProcess | undefined;
 	private stdoutBuffer = Buffer.alloc(0);
 	private stderrBuffer = Buffer.alloc(0);
+	private stderrDecoder = new StringDecoder("utf8");
 	private started = false;
 	private closed = false;
 
@@ -120,6 +122,8 @@ export class StdioTransport extends TransportEvents implements McpTransport {
 				this.emitError(new Error("MCP stdio server closed with an incomplete JSON-RPC message"));
 			}
 			this.stdoutBuffer = Buffer.alloc(0);
+			const finalStderr = this.stderrDecoder.end();
+			if (finalStderr) this.options.onStderr?.(finalStderr);
 			this.emitClose();
 		});
 
@@ -211,6 +215,6 @@ export class StdioTransport extends TransportEvents implements McpTransport {
 		const maxStderrBytes = this.options.maxStderrBytes ?? DEFAULT_MAX_STDERR_BYTES;
 		this.stderrBuffer = Buffer.concat([this.stderrBuffer, buffer]);
 		if (this.stderrBuffer.length > maxStderrBytes) this.stderrBuffer = this.stderrBuffer.subarray(-maxStderrBytes);
-		this.options.onStderr?.(buffer.toString("utf8"));
+		this.options.onStderr?.(this.stderrDecoder.write(buffer));
 	}
 }
