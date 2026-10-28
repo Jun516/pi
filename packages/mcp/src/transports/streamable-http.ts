@@ -42,6 +42,7 @@ export async function consumeSseStream(stream: ReadableStream<Uint8Array>, optio
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
 	let buffered = "";
+	let skipLineFeed = false;
 	let eventName: string | undefined;
 	let eventId: string | undefined;
 	let dataLines: string[] = [];
@@ -91,11 +92,18 @@ export async function consumeSseStream(stream: ReadableStream<Uint8Array>, optio
 			const { done, value } = await reader.read();
 			if (done) break;
 			buffered += decoder.decode(value, { stream: true });
-			let newline = buffered.indexOf("\n");
+			if (skipLineFeed && buffered.length > 0) {
+				skipLineFeed = false;
+				if (buffered.startsWith("\n")) buffered = buffered.slice(1);
+			}
+			let newline = buffered.search(/[\r\n]/);
 			while (newline >= 0) {
+				const carriageReturn = buffered[newline] === "\r";
 				processLine(buffered.slice(0, newline));
-				buffered = buffered.slice(newline + 1);
-				newline = buffered.indexOf("\n");
+				// CR ends a line now; ignore a following LF even if it arrives in the next chunk.
+				skipLineFeed = carriageReturn && newline + 1 === buffered.length;
+				buffered = buffered.slice(newline + (carriageReturn && buffered[newline + 1] === "\n" ? 2 : 1));
+				newline = buffered.search(/[\r\n]/);
 			}
 			if (Buffer.byteLength(buffered) > maxEventBytes)
 				throw new Error(`MCP SSE event exceeds ${maxEventBytes} bytes`);
