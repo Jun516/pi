@@ -16,6 +16,7 @@ async function readEvents(chunks: readonly Uint8Array[]): Promise<SseEvent[]> {
 	return events;
 }
 
+// Regression for #11522: valid CR framing must deliver MCP messages before EOF.
 describe("SSE line endings", () => {
 	it.each(["\n", "\r\n", "\r"])("separates successive events with %j", async (ending) => {
 		const bytes = encoder.encode(`data: first${ending}${ending}data: second${ending}${ending}`);
